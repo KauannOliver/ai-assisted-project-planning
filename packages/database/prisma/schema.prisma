@@ -1,0 +1,524 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  PROJECT_MANAGER
+  MANAGER
+  DIRECTOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id                  String                @id @default(uuid())
+  name                String
+  email               String                @unique
+  passwordHash        String
+  role                Role
+  status              UserStatus            @default(ACTIVE)
+  forcePasswordChange Boolean               @default(true)
+  invalidAttempts     Int                   @default(0)
+  tempLockedUntil     DateTime?
+  lastLoginAt         DateTime?
+  tokenVersion        Int                   @default(0)
+  deletedAt           DateTime?
+  deletedById         String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  departments         UserDepartmentScope[]
+  meetingsCreated     CommitteeMeeting[]    @relation(name: "MeetingCreator")
+  businessEvents      BusinessEvent[]       @relation(name: "BusinessEventActor")
+  scheduleRuns        ScheduleRun[]         @relation(name: "ScheduleRunActor")
+
+  @@index([deletedAt])
+}
+
+model Department {
+  id                String                @id @default(uuid())
+  code              String                @unique
+  name              String
+  status            UserStatus            @default(ACTIVE)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  users             UserDepartmentScope[]
+  projectRelations  ProjectDepartment[]
+  deliveries        Delivery[]            @relation(name: "DeliveryRecipientDept")
+  plannedDeliveries PlannedDelivery[]     @relation(name: "PlannedDeliveryRecipientDept")
+}
+
+model UserDepartmentScope {
+  id           String   @id @default(uuid())
+  userId       String
+  departmentId String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, departmentId])
+}
+
+enum CatalogType {
+  SYSTEM
+  CLASSIFICATION
+  FLOW_TYPE
+  BUSINESS_PRIORITY
+  CLASS
+  PHASE
+  IMPEDIMENT_TYPE
+  RESOURCE_MODALITY
+  ROLE
+}
+
+model CatalogItem {
+  id        String      @id @default(uuid())
+  type      CatalogType
+  code      String
+  name      String
+  value     String?
+  order     Int?
+  status    UserStatus  @default(ACTIVE)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  resourcesAsModality      Resource[]      @relation(name: "ResourceModality")
+  resourcesAsRole          Resource[]      @relation(name: "ResourceRole")
+  projectsAsClassification Project[]       @relation(name: "ProjectClassification")
+  projectsAsFlowType       Project[]       @relation(name: "ProjectFlowType")
+  projectsAsPriority       Project[]       @relation(name: "ProjectPriority")
+  projectsAsClass          Project[]       @relation(name: "ProjectClass")
+  projectSystems           ProjectSystem[]
+  projectPhases            ProjectPhase[]
+
+  @@unique([type, code])
+}
+
+model GlobalParameter {
+  key         String   @id
+  value       String
+  description String?
+  category    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Resource {
+  id                    String                   @id @default(uuid())
+  name                  String
+  modalityId            String
+  roleId                String
+  weeklyHours           Float
+  overheadPercentage    Float
+  developmentPercentage Float
+  recommendedWipLimit   Int                      @default(3)
+  status                UserStatus               @default(ACTIVE)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  unavailabilities      ResourceUnavailability[]
+  allocations           ProjectPhaseAllocation[]
+
+  modality CatalogItem @relation(name: "ResourceModality", fields: [modalityId], references: [id])
+  role     CatalogItem @relation(name: "ResourceRole", fields: [roleId], references: [id])
+}
+
+enum UnavailabilityType {
+  FERIADO
+  FERIAS
+  ATESTADO
+  TREINAMENTO
+  LICENCA
+  OUTRO
+}
+
+model ResourceUnavailability {
+  id                       String             @id @default(uuid())
+  type                     UnavailabilityType
+  startDate                DateTime
+  endDate                  DateTime
+  unavailableMinutesPerDay Int?
+  resourceId               String?
+  global                   Boolean            @default(false)
+  annualRecurrence         Boolean            @default(false)
+  notes                    String?
+  status                   UserStatus         @default(ACTIVE)
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id                          String    @id @default(uuid())
+  sdNumber                    String    @unique
+  title                       String
+  requester                   String
+  openingDate                 DateTime
+  requestedDeadline           DateTime?
+  problemDescription          String?
+  objective                   String?
+  currentProcess              String?
+  desiredProcess              String?
+  projectManagerNotes         String?
+  classificationId            String
+  flowTypeId                  String
+  businessPriorityId          String
+  classId                     String
+  totalHours                  Float
+  isLegalRequirement          Boolean   @default(false)
+  status                      Int       @default(1)
+  committeeDecision           String?
+  committeeScore              Float?
+  decisionDate                DateTime?
+  boardNotes                  String?
+  estimatedMonthlyGain        Float?
+  estimatedMonthlyLossAvoided Float?
+  roiMonthly                  Float?
+  realCompletionDate          DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  classification   CatalogItem @relation(name: "ProjectClassification", fields: [classificationId], references: [id])
+  flowType         CatalogItem @relation(name: "ProjectFlowType", fields: [flowTypeId], references: [id])
+  businessPriority CatalogItem @relation(name: "ProjectPriority", fields: [businessPriorityId], references: [id])
+  class            CatalogItem @relation(name: "ProjectClass", fields: [classId], references: [id])
+
+  departments       ProjectDepartment[]
+  systems           ProjectSystem[]
+  phases            ProjectPhase[]
+  deliveries        Delivery[]
+  plannedDeliveries PlannedDelivery[]
+
+  committeeEvaluations CommitteeMeetingEvaluation[]
+  currentSchedule      CurrentProjectSchedule?
+}
+
+model ProjectDepartment {
+  id           String   @id @default(uuid())
+  projectId    String
+  departmentId String
+  createdAt    DateTime @default(now())
+
+  project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, departmentId])
+}
+
+model ProjectSystem {
+  id        String   @id @default(uuid())
+  projectId String
+  systemId  String
+  createdAt DateTime @default(now())
+
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  system  CatalogItem @relation(fields: [systemId], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, systemId])
+}
+
+model ProjectPhase {
+  id               String             @id @default(uuid())
+  projectId        String
+  phaseId          String
+  name             String
+  percentage       Float
+  order            Int
+  totalMinutes     Int
+  executionMode    String             @default("SIMULTANEOUS")
+  status           ProjectPhaseStatus @default(PENDING)
+  completedMinutes Int                @default(0)
+  actualStartDate  DateTime?
+  actualEndDate    DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phaseCatalog    CatalogItem              @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  allocations     ProjectPhaseAllocation[]
+  currentSchedule CurrentPhaseSchedule[]
+
+  @@unique([projectId, phaseId])
+}
+
+enum ProjectPhaseStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ProjectPhaseAllocation {
+  id               String   @id @default(uuid())
+  projectPhaseId   String
+  resourceId       String
+  minutesAllocated Int
+  order            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  phase    ProjectPhase @relation(fields: [projectPhaseId], references: [id], onDelete: Cascade)
+  resource Resource     @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+
+  @@unique([projectPhaseId, resourceId])
+}
+
+model CommitteeMeeting {
+  id                  String   @id @default(uuid())
+  meetingDate         DateTime
+  notes               String?
+  createdById         String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  version             Int      @default(1)
+  status              String   @default("FINAL")
+  portfolioSnapshot   Json?
+  supersedesMeetingId String?
+
+  createdBy   User                         @relation(name: "MeetingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  evaluations CommitteeMeetingEvaluation[]
+  supersedes  CommitteeMeeting?            @relation(name: "MeetingRevisions", fields: [supersedesMeetingId], references: [id], onDelete: SetNull)
+  revisions   CommitteeMeeting[]           @relation(name: "MeetingRevisions")
+}
+
+model CommitteeMeetingEvaluation {
+  id                          String   @id @default(uuid())
+  meetingId                   String
+  projectId                   String
+  decision                    String
+  score                       Float?
+  notes                       String?
+  estimatedMonthlyGain        Float?
+  estimatedMonthlyLossAvoided Float?
+  roiMonthly                  Float?
+  snapshot                    Json
+  createdAt                   DateTime @default(now())
+
+  meeting CommitteeMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model PriorityQueueState {
+  id          String   @id @default("singleton")
+  mode        String   @default("automatic")
+  manualOrder String   @default("[]")
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+model CurrentProjectSchedule {
+  projectId     String    @id
+  startDate     DateTime?
+  endDate       DateTime?
+  status        String
+  isImpeded     Boolean   @default(false)
+  impediments   String?
+  updatedAt     DateTime  @updatedAt
+  scheduleRunId String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model CurrentPhaseSchedule {
+  id             String    @id @default(uuid())
+  projectId      String
+  projectPhaseId String
+  startDate      DateTime?
+  endDate        DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  phase ProjectPhase @relation(fields: [projectPhaseId], references: [id], onDelete: Cascade)
+}
+
+model CurrentResourceAllocation {
+  id               String   @id @default(uuid())
+  projectId        String
+  projectPhaseId   String
+  allocationId     String
+  resourceId       String
+  date             DateTime
+  minutesAllocated Int
+}
+
+model CurrentResourceUtilization {
+  id                    String   @id @default(uuid())
+  resourceId            String
+  date                  DateTime
+  minutesBusy           Int
+  minutesTotal          Int
+  utilizationPercentage Float
+}
+
+model CurrentEngineWarning {
+  id         String    @id @default(uuid())
+  type       String
+  message    String
+  projectId  String?
+  resourceId String?
+  date       DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model EngineChangeLog {
+  id                     String    @id @default(uuid())
+  changeType             String
+  userId                 String
+  timestamp              DateTime  @default(now())
+  portfolioEndDateBefore DateTime?
+  portfolioEndDateAfter  DateTime?
+  differenceDays         Int
+  mainCause              String
+  details                String
+}
+
+enum ScheduleRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ScheduleRunType {
+  OFFICIAL
+  PREVIEW
+}
+
+model ScheduleRun {
+  id               String            @id @default(uuid())
+  type             ScheduleRunType
+  status           ScheduleRunStatus @default(RUNNING)
+  triggerType      String
+  triggeredById    String?
+  inputHash        String
+  engineVersion    String            @default("2.1.0")
+  referenceDate    DateTime?
+  parameters       Json?
+  portfolioEndDate DateTime?
+  warningCount     Int               @default(0)
+  errorMessage     String?
+  startedAt        DateTime          @default(now())
+  completedAt      DateTime?
+
+  triggeredBy User?                   @relation(name: "ScheduleRunActor", fields: [triggeredById], references: [id], onDelete: SetNull)
+  projects    ScheduleRunProject[]
+  phases      ScheduleRunPhase[]
+  allocations ScheduleRunAllocation[]
+
+  @@index([type, status, startedAt])
+}
+
+model ScheduleRunProject {
+  id            String    @id @default(uuid())
+  runId         String
+  projectId     String
+  queuePosition Int?
+  startDate     DateTime?
+  endDate       DateTime?
+  riskStatus    String
+  isImpeded     Boolean   @default(false)
+  impediments   String?
+
+  run ScheduleRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, projectId])
+  @@index([projectId])
+}
+
+model ScheduleRunPhase {
+  id             String    @id @default(uuid())
+  runId          String
+  projectId      String
+  projectPhaseId String
+  startDate      DateTime?
+  endDate        DateTime?
+
+  run ScheduleRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, projectPhaseId])
+  @@index([projectId])
+}
+
+model ScheduleRunAllocation {
+  id               String   @id @default(uuid())
+  runId            String
+  projectId        String
+  projectPhaseId   String
+  allocationId     String
+  resourceId       String
+  date             DateTime
+  minutesAllocated Int
+
+  run ScheduleRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, resourceId, date])
+  @@index([projectId])
+}
+
+model Delivery {
+  id                String   @id @default(uuid())
+  projectId         String
+  recipientDeptId   String
+  plannedDeliveryId String?  @unique
+  deliveryDate      DateTime
+  notes             String?
+  createdById       String
+  createdAt         DateTime @default(now())
+
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recipientDept   Department        @relation(name: "DeliveryRecipientDept", fields: [recipientDeptId], references: [id], onDelete: Restrict)
+  plannedDelivery PlannedDelivery?  @relation(fields: [plannedDeliveryId], references: [id], onDelete: SetNull)
+  feedback        DeliveryFeedback?
+}
+
+model PlannedDelivery {
+  id              String   @id @default(uuid())
+  projectId       String
+  title           String
+  recipientDeptId String
+  plannedDate     DateTime
+  notes           String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recipientDept Department @relation(name: "PlannedDeliveryRecipientDept", fields: [recipientDeptId], references: [id], onDelete: Restrict)
+  delivery      Delivery?
+
+  @@index([projectId, plannedDate])
+}
+
+model DeliveryFeedback {
+  id           String   @id @default(uuid())
+  deliveryId   String   @unique
+  feedbackDate DateTime
+  notes        String?
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+}
+
+model BusinessEvent {
+  id            String   @id @default(uuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  description   String
+  metadata      Json?
+  userId        String
+  actorName     String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(name: "BusinessEventActor", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([aggregateType, aggregateId, createdAt])
+  @@index([createdAt])
+}
