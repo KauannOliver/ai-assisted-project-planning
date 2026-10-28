@@ -1,61 +1,60 @@
-# TIC — Gestão de Projetos
+# AI-Assisted Project Planning
 
-Aplicação para gestão e acompanhamento de portfólio de tecnologia, com cadastro de projetos e recursos, governança de comitê, priorização e simulação de cronograma por capacidade.
+Capacity-aware project prioritization, scheduling and narrative analysis.
 
-## Componentes
+**Next.js, React, TypeScript, NestJS, Prisma, PostgreSQL, Redis, BullMQ, Groq**
 
-- **Web:** Next.js 14 e React 18; interface em `apps/web`.
-- **API:** NestJS, TypeScript e Prisma em `apps/api`; inclui motor de cronograma, importação/exportação de planilhas e API de BI.
-- **Dados:** PostgreSQL, schema e migrações em `packages/database/prisma`.
-- **Worker:** BullMQ e Redis em `apps/worker`. O processador atual é um placeholder; o cálculo do cronograma está na API.
-- **Infraestrutura:** Docker Compose com PostgreSQL, Redis, API, web e worker.
+## What it does
 
-## Começar com Docker
+- Manages projects, resources, committee priorities and capacity allocations.
+- A deterministic rules engine calculates schedules, bottlenecks and scenarios.
+- AI interprets calculated results in a narrative; it does not calculate the schedule.
+- Provides spreadsheet import/export and a separate read-only BI API.
 
-Requisitos: Docker com Compose. O projeto usa Node.js 20 nas imagens. As portas padrão no host são 3100 (web), 4100 (API), 55432 (PostgreSQL) e 56379 (Redis).
+## Workflow
 
-1. Copie `.env.example` para `.env` e configure `POSTGRES_PASSWORD`, `DATABASE_URL` e um `JWT_SECRET` longo e aleatório. As senhas em `DATABASE_URL` e `POSTGRES_PASSWORD` devem coincidir. Ajuste `CORS_ORIGINS` para os endereços usados.
-2. Execute `docker compose up --build -d`. A API aplica as migrações na inicialização.
-3. Acesse `http://localhost:3100` e a documentação Swagger em `http://localhost:4100/api/docs`. Os endpoints de saúde são `/health` e `/ready` na API.
-
-O banco de um clone novo começa sem usuários. **Não há seed seguro incluído:** o seed operacional da cópia original foi excluído do repositório por conter dados internos, credenciais fixas e limpeza de dados. Portanto, o primeiro acesso exige um procedimento seguro de provisionamento de usuário antes de a aplicação ser utilizável. Não execute seeds desconhecidos sobre dados existentes.
-
-## Desenvolvimento local
-
-Com Node.js 20, npm, PostgreSQL e Redis disponíveis, configure `.env` a partir do exemplo, instale com `npm ci` e gere o cliente com `npx prisma generate --schema packages/database/prisma/schema.prisma`. Para um banco de desenvolvimento vazio, aplique as migrações com `npx prisma migrate deploy --schema packages/database/prisma/schema.prisma`; confira o destino antes de executar qualquer comando de banco.
-
-Execute os serviços em terminais separados: `npm run dev:api`, `npm run dev:web` e `npm run dev:worker`. A API usa `PORT` (4100 no exemplo); o frontend encaminha `/backend-api` para `INTERNAL_API_URL` ou `http://localhost:4100`. Para alterar as portas do PostgreSQL e Redis no host, atualize também `DATABASE_URL` e `REDIS_URL`.
-
-```bash
-npm test       # testes dos workspaces que possuem script de teste
-npm run build  # builds dos workspaces que possuem script de build
+```mermaid
+flowchart LR
+  N0["Projects and capacity"] --> N1
+  N1["Rules-based schedule engine"] --> N2
+  N2["Scenario comparison"] --> N3
+  N3["Optional AI interpretation"] --> N4
+  N4["Review"]
 ```
 
-`npm run db:migrate` executa `prisma migrate dev`, destinado ao desenvolvimento. `npm run db:seed` depende do seed operacional não incluído; `npm run db:studio` consta no manifesto raiz, mas não possui script correspondente no workspace do banco.
+## Local setup and use
 
-## Configuração
+Requires Node.js 20+, npm, PostgreSQL and Redis. Configure a local `.env` from `.env.example`.
+```powershell
+npm ci
+npx prisma generate --schema packages/database/prisma/schema.prisma
+npm run dev:api
+# In separate terminals:
+npm run dev:web
+npm run dev:worker
+```
+Apply Prisma migrations only to a new isolated development database. `npm test` runs workspace tests; `npm run build` builds the workspaces.
 
-| Variável | Uso |
-| --- | --- |
-| `DATABASE_URL` | Conexão PostgreSQL para execução local e ferramentas Prisma. |
-| `POSTGRES_PASSWORD` | Senha do PostgreSQL no Compose. |
-| `REDIS_URL` | Conexão Redis para execução local. |
-| `JWT_SECRET` | Assinatura dos tokens de sessão; mantenha secreto. |
-| `CORS_ORIGINS` | Origens permitidas, separadas por vírgulas. |
-| `API_HOST_PORT`, `WEB_HOST_PORT`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` | Portas publicadas pelo Compose. |
-| `PORT` | Porta da API local; no container é definida como 4000. |
-| `INTERNAL_API_URL` | Destino do proxy do Next.js. |
-| `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_TIMEOUT_MS` | Narrativas opcionais; sem chave, há resposta local de fallback. |
-| `BI_API_KEY` | Chave exclusiva para endpoints de leitura `/bi/v1`, enviada em `X-API-Key`. |
-| `NEXT_PUBLIC_API_URL` | Campo presente no exemplo; a interface usa o proxy `/backend-api`. |
+## Configuration
 
-Os valores padrão e exemplos destinam-se a desenvolvimento. Revise segredos, exposição de portas, permissões e política de acesso antes de qualquer implantação.
+Environment names declared by the included examples (values must be supplied locally):
 
-## Documentação e estrutura
+`API_HOST_PORT`, `BI_API_KEY`, `CORS_ORIGINS`, `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_TIMEOUT_MS`, `JWT_SECRET`, `NEXT_PUBLIC_API_URL`, `PORT`, `POSTGRES_HOST_PORT`, `POSTGRES_PASSWORD`, `REDIS_HOST_PORT`, `REDIS_URL`, `WEB_HOST_PORT`.
 
-- [Guia técnico](docs/guia-tecnico.md): organização, fluxos, testes e cuidados operacionais.
-- [Especificações modulares](tic-modules/README.md): documentos de requisitos e planos; não representam necessariamente funcionalidades entregues.
-- [Especificação histórica](DOC.md) e [descrição do motor](MOTOR.md): material de referência que pode conter afirmações ou portas antigas; prevalecem o código e este README para execução.
-- `scripts/`: ferramentas de auditoria e reconciliação; algumas alteram dados. Leia o código e use somente em ambiente adequado.
+## Boundaries and limitations
 
-Backups, saídas de auditoria, ambientes, seed operacional e relatórios de operação permanecem fora do Git. O repositório não inclui uma licença de distribuição; confirme os direitos e a autorização antes de compartilhar o código.
+The operational seed is deliberately absent; a new database requires safe first-user provisioning before interactive use. Root seed/studio aliases are not a complete bootstrap procedure. The worker processor is a placeholder; scheduling runs in the API. External AI calls are optional and were not exercised.
+
+This is a source snapshot, not a claim of production readiness. Business results, dates and unmeasured performance are intentionally not asserted. Application UI language is preserved.
+
+## License
+
+No new distribution license is granted for this corporate source edition. Public visibility does not grant reuse rights; obtain permission from the relevant rights holder. Existing third-party notices remain applicable.
+
+## Further reading
+
+[Architecture and local operations](docs/ARCHITECTURE.md) explains service boundaries, bootstrap gaps and verification limits.
+
+## Verification record
+
+See [snapshot checks and remaining limitations](docs/VERIFICATION.md).
